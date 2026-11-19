@@ -1,0 +1,32 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+
+# Environment / secrets
+.env
+.env.*
+
+# VS Code
+.vscode/
+
+# Local databases
+data/*.db
+*.db
+
+# User/private RAG documents
+data/documents/*
+
+# Keep document folder in Git
+!data/documents/.gitkeep
+
+# Local models
+models/
+
+# Test/cache
+.pytest_cache/
+.coverage
+
+# OS
+Thumbs.db
+.DS_Store
