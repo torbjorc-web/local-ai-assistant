@@ -68,6 +68,51 @@ const documentStatus =
         "document-status"
     );
 
+const documentUploadForm =
+    document.getElementById(
+        "document-upload-form"
+    );
+
+const documentFileInput =
+    document.getElementById(
+        "document-file-input"
+    );
+
+const documentDropZone =
+    document.getElementById(
+        "document-drop-zone"
+    );
+
+const uploadDocumentButton =
+    document.getElementById(
+        "upload-document-button"
+    );
+
+const selectedFileName =
+    document.getElementById(
+        "selected-file-name"
+    );
+
+const uploadProgressContainer =
+    document.getElementById(
+        "upload-progress-container"
+    );
+
+const uploadProgress =
+    document.getElementById(
+        "upload-progress"
+    );
+
+const uploadProgressLabel =
+    document.getElementById(
+        "upload-progress-label"
+    );
+
+const uploadProgressPercent =
+    document.getElementById(
+        "upload-progress-percent"
+    );
+
 const conversationInfo =
     document.getElementById(
         "conversation-info"
@@ -91,6 +136,9 @@ const sourcesElement =
 
 const documentIndexStatus =
     new Map();
+
+
+let selectedDocumentFile = null;
 
 
 let conversationId = null;
@@ -510,6 +558,178 @@ async function deleteDocument(
 }
 
 
+function uploadDocument(file) {
+    return new Promise(
+        (resolve, reject) => {
+            const formData =
+                new FormData();
+
+            formData.append(
+                "file",
+                file
+            );
+
+            const request =
+                new XMLHttpRequest();
+
+            request.upload.addEventListener(
+                "loadstart",
+                () => {
+                    showUploadProgress(0);
+                }
+            );
+
+            request.upload.addEventListener(
+                "progress",
+                (event) => {
+                    if (!event.lengthComputable) {
+                        return;
+                    }
+
+                    const percent =
+                        Math.round(
+                            (
+                                event.loaded
+                                / event.total
+                            )
+                            * 100
+                        );
+
+                    showUploadProgress(
+                        percent
+                    );
+                }
+            );
+
+            request.upload.addEventListener(
+                "load",
+                () => {
+                    showUploadProgress(100);
+
+                    showIndexingProgress();
+                }
+            );
+
+            request.addEventListener(
+                "load",
+                () => {
+                    let data;
+
+                    try {
+                        data = JSON.parse(
+                            request.responseText
+                        );
+                    } catch {
+                        reject(
+                            new Error(
+                                "Ugyldig respons fra API-et."
+                            )
+                        );
+
+                        return;
+                    }
+
+                    if (
+                        request.status >= 200
+                        && request.status < 300
+                    ) {
+                        resolve(data);
+
+                        return;
+                    }
+
+                    reject(
+                        new Error(
+                            data.detail
+                            || "Filopplastingen feilet."
+                        )
+                    );
+                }
+            );
+
+            request.addEventListener(
+                "error",
+                () => {
+                    reject(
+                        new Error(
+                            "Nettverksfeil under opplasting."
+                        )
+                    );
+                }
+            );
+
+            request.addEventListener(
+                "abort",
+                () => {
+                    reject(
+                        new Error(
+                            "Opplastingen ble avbrutt."
+                        )
+                    );
+                }
+            );
+
+            request.open(
+                "POST",
+                "/documents/upload"
+            );
+
+            request.send(
+                formData
+            );
+        }
+    );
+}
+
+
+function resetUploadProgress() {
+    uploadProgress.value = 0;
+
+    uploadProgressLabel.textContent =
+        "Laster opp...";
+
+    uploadProgressPercent.textContent =
+        "0 %";
+
+    uploadProgressContainer.classList.add(
+        "hidden"
+    );
+}
+
+
+function showUploadProgress(percent) {
+    const safePercent = Math.max(
+        0,
+        Math.min(100, percent)
+    );
+
+    uploadProgress.value =
+        safePercent;
+
+    uploadProgressPercent.textContent =
+        `${safePercent} %`;
+
+    uploadProgressContainer.classList.remove(
+        "hidden"
+    );
+}
+
+
+function showIndexingProgress() {
+    uploadProgress.value = 100;
+
+    uploadProgressLabel.textContent =
+        "Indekserer dokument...";
+
+    uploadProgressPercent.textContent =
+        "";
+
+    uploadProgressContainer.classList.remove(
+        "hidden"
+    );
+}
+
+
 async function createMemory(content) {
     const response = await fetch(
         "/memories",
@@ -705,6 +925,93 @@ function getDocumentType(fileName) {
         label: "TXT",
         className: "text",
     };
+}
+
+
+function isSupportedDocument(file) {
+    if (!file || !file.name) {
+        return false;
+    }
+
+    const extension =
+        file.name
+            .split(".")
+            .pop()
+            .toLowerCase();
+
+    return [
+        "txt",
+        "md",
+        "pdf",
+    ].includes(extension);
+}
+
+
+function selectDocumentFile(file) {
+    resetUploadProgress();
+
+    documentDropZone.classList.remove(
+        "invalid"
+    );
+
+    if (!file) {
+        selectedDocumentFile = null;
+
+        selectedFileName.textContent =
+            "Ingen fil valgt";
+
+        selectedFileName.classList.remove(
+            "has-file"
+        );
+
+        uploadDocumentButton.disabled =
+            true;
+
+        return;
+    }
+
+    if (!isSupportedDocument(file)) {
+        selectedDocumentFile = null;
+
+        selectedFileName.textContent =
+            "Ugyldig filtype";
+
+        selectedFileName.classList.remove(
+            "has-file"
+        );
+
+        documentDropZone.classList.add(
+            "invalid"
+        );
+
+        documentStatus.textContent =
+            "Bare TXT, Markdown og PDF støttes.";
+
+        documentStatus.className =
+            "panel-status error";
+
+        uploadDocumentButton.disabled =
+            true;
+
+        return;
+    }
+
+    selectedDocumentFile = file;
+
+    selectedFileName.textContent =
+        file.name;
+
+    selectedFileName.classList.add(
+        "has-file"
+    );
+
+    documentStatus.textContent = "";
+
+    documentStatus.className =
+        "panel-status";
+
+    uploadDocumentButton.disabled =
+        false;
 }
 
 
@@ -1097,6 +1404,206 @@ form.addEventListener(
             input.disabled = false;
 
             input.focus();
+        }
+    }
+);
+
+
+documentFileInput.addEventListener(
+    "change",
+    () => {
+        selectDocumentFile(
+            documentFileInput.files[0]
+        );
+    }
+);
+
+
+documentDropZone.addEventListener(
+    "click",
+    (event) => {
+        if (event.target !== documentFileInput) {
+            documentFileInput.click();
+        }
+    }
+);
+
+
+documentDropZone.addEventListener(
+    "keydown",
+    (event) => {
+        if (
+            event.key === "Enter"
+            || event.key === " "
+        ) {
+            event.preventDefault();
+
+            documentFileInput.click();
+        }
+    }
+);
+
+
+documentDropZone.addEventListener(
+    "dragover",
+    (event) => {
+        event.preventDefault();
+
+        event.dataTransfer.dropEffect =
+            "copy";
+
+        documentDropZone.classList.add(
+            "dragging"
+        );
+    }
+);
+
+
+documentDropZone.addEventListener(
+    "dragleave",
+    () => {
+        documentDropZone.classList.remove(
+            "dragging"
+        );
+    }
+);
+
+
+documentDropZone.addEventListener(
+    "drop",
+    (event) => {
+        event.preventDefault();
+
+        documentDropZone.classList.remove(
+            "dragging"
+        );
+
+        const files =
+            event.dataTransfer.files;
+
+        if (!files || files.length === 0) {
+            return;
+        }
+
+        selectDocumentFile(
+            files[0]
+        );
+
+        if (
+            files.length > 1
+            && selectedDocumentFile
+        ) {
+            documentStatus.textContent =
+                (
+                    "Velg én fil om gangen. "
+                    + "Bare den første filen ble valgt."
+                );
+
+            documentStatus.className =
+                "panel-status error";
+        }
+    }
+);
+
+
+window.addEventListener(
+    "dragover",
+    (event) => {
+        event.preventDefault();
+    }
+);
+
+
+window.addEventListener(
+    "drop",
+    (event) => {
+        event.preventDefault();
+    }
+);
+
+
+documentUploadForm.addEventListener(
+    "submit",
+    async (event) => {
+        event.preventDefault();
+
+        const file = selectedDocumentFile;
+
+        if (!file) {
+            documentStatus.textContent =
+                "Velg en fil først.";
+
+            documentStatus.className =
+                "panel-status error";
+
+            return;
+        }
+
+        uploadDocumentButton.disabled =
+            true;
+
+        documentFileInput.disabled =
+            true;
+
+        documentStatus.textContent =
+            `Laster opp ${file.name}...`;
+
+        documentStatus.className =
+            "panel-status";
+
+        try {
+            resetUploadProgress();
+
+            const result =
+                await uploadDocument(file);
+
+            documentStatus.textContent =
+                (
+                    `${result.file_name} ble lastet `
+                    + `opp og indeksert i `
+                    + `${result.chunk_count} chunks.`
+                );
+
+            documentStatus.className =
+                "panel-status success";
+
+            uploadProgressLabel.textContent =
+                "Ferdig";
+
+            uploadProgressPercent.textContent =
+                "100 %";
+
+            uploadProgress.value = 100;
+
+            selectedDocumentFile = null;
+
+            documentFileInput.value = "";
+
+            selectedFileName.textContent =
+                "Ingen fil valgt";
+
+            selectedFileName.classList.remove(
+                "has-file"
+            );
+
+            await loadDocuments();
+
+        } catch (error) {
+            documentStatus.textContent =
+                error.message;
+
+            documentStatus.className =
+                "panel-status error";
+
+            uploadProgressLabel.textContent =
+                "Feil";
+
+        } finally {
+            uploadDocumentButton.disabled =
+                selectedDocumentFile === null;
+
+            documentFileInput.disabled =
+                false;
         }
     }
 );

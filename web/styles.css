@@ -279,6 +279,180 @@ textarea {
 }
 
 
+.document-upload-form {
+    display: flex;
+    flex-direction: column;
+
+    gap: 8px;
+
+    margin-bottom: 10px;
+}
+
+
+.document-drop-zone {
+    padding: 18px 12px;
+
+    border: 2px dashed var(--border);
+    border-radius: 12px;
+
+    background: var(--surface-secondary);
+
+    text-align: center;
+
+    cursor: pointer;
+
+    transition:
+        border-color 0.15s ease,
+        background-color 0.15s ease,
+        transform 0.15s ease;
+}
+
+
+.document-drop-zone:hover {
+    border-color: var(--accent);
+}
+
+
+.document-drop-zone:focus-visible {
+    outline: 3px solid rgba(37, 99, 235, 0.2);
+    outline-offset: 2px;
+
+    border-color: var(--accent);
+}
+
+
+.document-drop-zone.dragging {
+    border-color: var(--accent);
+
+    background: rgba(37, 99, 235, 0.08);
+
+    transform: scale(1.01);
+}
+
+
+.document-drop-zone.invalid {
+    border-color: var(--danger);
+}
+
+
+.drop-zone-title {
+    font-weight: 700;
+}
+
+
+.drop-zone-subtitle {
+    margin-top: 3px;
+
+    color: var(--muted);
+
+    font-size: 0.8rem;
+}
+
+
+.drop-zone-types {
+    margin-top: 8px;
+
+    color: var(--muted);
+
+    font-size: 0.7rem;
+    font-weight: 700;
+}
+
+
+.hidden-file-input {
+    position: absolute;
+
+    width: 1px;
+    height: 1px;
+
+    padding: 0;
+    margin: -1px;
+
+    overflow: hidden;
+
+    clip: rect(0, 0, 0, 0);
+
+    white-space: nowrap;
+
+    border: 0;
+}
+
+
+.selected-file-name {
+    margin-top: 8px;
+
+    overflow: hidden;
+
+    color: var(--muted);
+
+    font-size: 0.75rem;
+
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+
+.selected-file-name.has-file {
+    color: var(--text);
+
+    font-weight: 600;
+}
+
+
+.upload-progress-container {
+    margin-top: 10px;
+}
+
+
+.upload-progress-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+
+    margin-bottom: 6px;
+
+    color: var(--muted);
+
+    font-size: 0.75rem;
+}
+
+
+#upload-progress {
+    display: block;
+
+    width: 100%;
+    height: 10px;
+
+    overflow: hidden;
+
+    border: 0;
+    border-radius: 999px;
+
+    background: var(--surface-secondary);
+}
+
+
+#upload-progress::-webkit-progress-bar {
+    background: var(--surface-secondary);
+
+    border-radius: 999px;
+}
+
+
+#upload-progress::-webkit-progress-value {
+    background: var(--accent);
+
+    border-radius: 999px;
+}
+
+
+#upload-progress::-moz-progress-bar {
+    background: var(--accent);
+
+    border-radius: 999px;
+}
+
+
 .document-item {
     margin-bottom: 8px;
 

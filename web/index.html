@@ -140,12 +140,81 @@
                 <div class="sidebar-header">
                     <h2>Dokumenter</h2>
 
+                    <form
+                        id="document-upload-form"
+                        class="document-upload-form"
+                    >
+                        <div
+                            id="document-drop-zone"
+                            class="document-drop-zone"
+                            tabindex="0"
+                            role="button"
+                            aria-label="Dra et dokument hit eller klikk for å velge fil"
+                        >
+                            <div class="drop-zone-title">
+                                Dra dokument hit
+                            </div>
+
+                            <div class="drop-zone-subtitle">
+                                eller klikk for å velge
+                            </div>
+
+                            <div class="drop-zone-types">
+                                TXT · Markdown · PDF
+                            </div>
+
+                            <input
+                                id="document-file-input"
+                                class="hidden-file-input"
+                                type="file"
+                                accept=".txt,.md,.pdf"
+                            >
+                        </div>
+
+                        <div
+                            id="selected-file-name"
+                            class="selected-file-name"
+                        >
+                            Ingen fil valgt
+                        </div>
+
+                        <div
+                            id="upload-progress-container"
+                            class="upload-progress-container hidden"
+                        >
+                            <div class="upload-progress-header">
+                                <span id="upload-progress-label">
+                                    Laster opp...
+                                </span>
+
+                                <span id="upload-progress-percent">
+                                    0 %
+                                </span>
+                            </div>
+
+                            <progress
+                                id="upload-progress"
+                                value="0"
+                                max="100"
+                            ></progress>
+                        </div>
+
+                        <button
+                            id="upload-document-button"
+                            type="submit"
+                            class="primary-button full-width"
+                            disabled
+                        >
+                            Last opp og indekser
+                        </button>
+                    </form>
+
                     <button
                         id="index-documents-button"
                         type="button"
-                        class="primary-button full-width"
+                        class="secondary-button full-width"
                     >
-                        Indekser dokumenter
+                        Reindekser dokumenter
                     </button>
                 </div>
 
