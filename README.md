@@ -6,6 +6,7 @@
 [![RAG](https://img.shields.io/badge/RAG-Document_Retrieval-7A1FA2)](#document-rag)
 [![SQLite](https://img.shields.io/badge/SQLite-Persistent_Memory-003B57?logo=sqlite&logoColor=white)](https://sqlite.org/)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Tests](https://github.com/torbjorc-web/local-ai-assistant/actions/workflows/tests.yml/badge.svg)](https://github.com/torbjorc-web/local-ai-assistant/actions/workflows/tests.yml)
 
 A privacy-focused local AI assistant built with Python, Ollama, Gemma, SQLite, embeddings, hybrid retrieval, persistent memory, document RAG, PDF processing, and OCR.
 
