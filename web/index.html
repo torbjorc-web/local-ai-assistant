@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>Local AI Assistant</title>
+
+    <link
+        rel="stylesheet"
+        href="/web-assets/styles.css"
+    >
+</head>
+
+<body>
+    <div class="app">
+        <header class="header">
+            <div>
+                <h1>Local AI Assistant</h1>
+
+                <p>
+                    Lokal AI med minne, RAG og
+                    dokumentkilder
+                </p>
+            </div>
+
+            <div
+                id="status"
+                class="status"
+            >
+                Kobler til...
+            </div>
+        </header>
+
+        <main class="main">
+            <section
+                id="messages"
+                class="messages"
+                aria-live="polite"
+            >
+                <div class="message assistant">
+                    <div class="message-label">
+                        AI
+                    </div>
+
+                    <div class="message-content">
+                        Hei! Jeg er klar. Hva vil du
+                        snakke om?
+                    </div>
+                </div>
+            </section>
+
+            <section
+                id="sources-panel"
+                class="sources-panel hidden"
+            >
+                <h2>Dokumentkilder</h2>
+
+                <div id="sources"></div>
+            </section>
+        </main>
+
+        <footer class="composer">
+            <form id="chat-form">
+                <label
+                    for="message-input"
+                    class="sr-only"
+                >
+                    Melding
+                </label>
+
+                <textarea
+                    id="message-input"
+                    rows="3"
+                    placeholder="Skriv en melding..."
+                    required
+                ></textarea>
+
+                <div class="composer-actions">
+                    <div
+                        id="conversation-info"
+                        class="conversation-info"
+                    >
+                        Ny samtale
+                    </div>
+
+                    <div class="buttons">
+                        <button
+                            id="new-chat-button"
+                            type="button"
+                            class="secondary-button"
+                        >
+                            Ny samtale
+                        </button>
+
+                        <button
+                            id="send-button"
+                            type="submit"
+                            class="primary-button"
+                        >
+                            Send
+                        </button>
+                    </div>
+                </div>
+            </form>
+        </footer>
+    </div>
+
+    <script src="/web-assets/app.js"></script>
+</body>
+</html>

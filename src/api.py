@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Annotated
 
 from fastapi import (
@@ -7,6 +8,8 @@ from fastapi import (
     Query,
     status,
 )
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from src.chatbot import Chatbot
 from src.schemas import (
@@ -25,6 +28,10 @@ from src.schemas import (
 )
 
 
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+WEB_DIR = PROJECT_ROOT / "web"
+
+
 app = FastAPI(
     title="Local AI Assistant API",
     description=(
@@ -33,6 +40,14 @@ app = FastAPI(
         "and OCR."
     ),
     version="0.1.0",
+)
+
+app.mount(
+    "/web-assets",
+    StaticFiles(
+        directory=WEB_DIR,
+    ),
+    name="web-assets",
 )
 
 
@@ -54,14 +69,12 @@ ChatbotDependency = Annotated[
 
 @app.get(
     "/",
-    response_model=HealthResponse,
-    tags=["System"],
+    include_in_schema=False,
 )
-def root():
-    return {
-        "status": "ok",
-        "application": "Local AI Assistant",
-    }
+def web_interface():
+    return FileResponse(
+        WEB_DIR / "index.html"
+    )
 
 
 @app.get(
