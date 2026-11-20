@@ -186,6 +186,8 @@ function addMessage(
         behavior: "smooth",
         block: "end",
     });
+
+    return body;
 }
 
 
@@ -1071,8 +1073,16 @@ function renderDocuments(documents) {
                 ? "chunk"
                 : "chunks";
 
+        const pageDescription =
+            documentEntry.page_count === null
+                ? ""
+                : ` · ${documentEntry.page_count} sider`;
+
         meta.textContent =
-            `${documentEntry.chunk_count} ${chunkWord}`;
+            (
+                `${documentEntry.chunk_count} ${chunkWord}`
+                + pageDescription
+            );
 
         const badges =
             document.createElement("div");
@@ -1101,15 +1111,7 @@ function renderDocuments(documents) {
             typeBadge
         );
 
-        const indexResult =
-            documentIndexStatus.get(
-                documentEntry.file_name
-            );
-
-        if (
-            indexResult
-            && indexResult.used_ocr
-        ) {
+        if (documentEntry.used_ocr) {
             const ocrBadge =
                 document.createElement(
                     "span"
@@ -1131,6 +1133,85 @@ function renderDocuments(documents) {
 
         actions.className =
             "document-actions";
+
+        const detailButton =
+            document.createElement("button");
+
+        detailButton.type = "button";
+        detailButton.className =
+            "document-detail-button";
+        detailButton.textContent =
+            "Vis detaljer";
+        detailButton.setAttribute(
+            "aria-expanded",
+            "false"
+        );
+
+        const detailPanel =
+            document.createElement("div");
+
+        detailPanel.className =
+            "document-details hidden";
+
+        detailButton.addEventListener(
+            "click",
+            async () => {
+                if (
+                    !detailPanel.classList.contains(
+                        "hidden"
+                    )
+                ) {
+                    detailPanel.classList.add(
+                        "hidden"
+                    );
+                    detailButton.textContent =
+                        "Vis detaljer";
+                    detailButton.setAttribute(
+                        "aria-expanded",
+                        "false"
+                    );
+                    return;
+                }
+
+                detailButton.disabled = true;
+
+                try {
+                    const response = await fetch(
+                        `/documents/${documentEntry.id}`
+                    );
+                    const details =
+                        await response.json();
+
+                    if (!response.ok) {
+                        throw new Error(
+                            details.detail
+                            || "Kunne ikke laste dokumentdetaljer."
+                        );
+                    }
+
+                    renderDocumentDetails(
+                        detailPanel,
+                        details
+                    );
+                    detailPanel.classList.remove(
+                        "hidden"
+                    );
+                    detailButton.textContent =
+                        "Skjul detaljer";
+                    detailButton.setAttribute(
+                        "aria-expanded",
+                        "true"
+                    );
+                } catch (error) {
+                    documentStatus.textContent =
+                        error.message;
+                    documentStatus.className =
+                        "panel-status error";
+                } finally {
+                    detailButton.disabled = false;
+                }
+            }
+        );
 
         const deleteButton =
             document.createElement("button");
@@ -1154,6 +1235,7 @@ function renderDocuments(documents) {
             }
         );
 
+        actions.appendChild(detailButton);
         actions.appendChild(
             deleteButton
         );
@@ -1162,8 +1244,64 @@ function renderDocuments(documents) {
         item.appendChild(meta);
         item.appendChild(badges);
         item.appendChild(actions);
+        item.appendChild(detailPanel);
 
         documentList.appendChild(item);
+    }
+}
+
+
+function renderDocumentDetails(
+    panel,
+    details
+) {
+    panel.innerHTML = "";
+
+    const metadata =
+        document.createElement("div");
+    metadata.className =
+        "document-detail-meta";
+    metadata.textContent = [
+        details.page_count === null
+            ? "Sidetall ikke tilgjengelig"
+            : `${details.page_count} sider`,
+        details.extraction_method === "legacy"
+            ? "Filstørrelse ukjent"
+            : `${details.file_size} bytes`,
+        `Uttrekk: ${details.extraction_method}`,
+        details.extraction_method === "legacy"
+            ? "OCR-status ukjent"
+            : details.used_ocr
+                ? `OCR på side ${details.ocr_pages.join(", ")}`
+                : "OCR ikke brukt",
+    ].join(" · ");
+    panel.appendChild(metadata);
+
+    for (const chunk of details.chunks) {
+        const chunkElement =
+            document.createElement("section");
+        chunkElement.className =
+            "document-chunk";
+
+        const heading =
+            document.createElement("h3");
+        heading.textContent =
+            chunk.page_number === null
+                ? `Chunk ${chunk.chunk_index + 1}`
+                : (
+                    `Chunk ${chunk.chunk_index + 1}`
+                    + ` · Side ${chunk.page_number}`
+                );
+
+        const content =
+            document.createElement("div");
+        content.className =
+            "document-chunk-content";
+        content.textContent = chunk.content;
+
+        chunkElement.appendChild(heading);
+        chunkElement.appendChild(content);
+        panel.appendChild(chunkElement);
     }
 }
 
@@ -1314,14 +1452,17 @@ async function loadConversation(
 }
 
 
-async function sendMessage(message) {
+async function sendMessage(
+    message,
+    onChunk
+) {
     const payload = {
         message: message,
         conversation_id: conversationId,
     };
 
     const response = await fetch(
-        "/chat",
+        "/chat/stream",
         {
             method: "POST",
 
@@ -1334,9 +1475,8 @@ async function sendMessage(message) {
         }
     );
 
-    const data = await response.json();
-
     if (!response.ok) {
+        const data = await response.json();
         const detail =
             data.detail
             || "Ukjent API-feil.";
@@ -1344,7 +1484,93 @@ async function sendMessage(message) {
         throw new Error(detail);
     }
 
-    return data;
+    if (!response.body) {
+        throw new Error(
+            "Nettleseren støtter ikke strømmede svar."
+        );
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let bufferedText = "";
+    let result = null;
+
+    function processLine(line) {
+        if (!line.trim()) {
+            return;
+        }
+
+        let event;
+
+        try {
+            event = JSON.parse(line);
+        } catch {
+            throw new Error(
+                "Ugyldig strømmet respons fra API-et."
+            );
+        }
+
+        if (event.type === "chunk") {
+            onChunk(event.content);
+            return;
+        }
+
+        if (event.type === "error") {
+            if (event.conversation_id) {
+                conversationId =
+                    event.conversation_id;
+                updateConversationInfo();
+            }
+
+            throw new Error(event.detail);
+        }
+
+        if (event.type === "done") {
+            result = event;
+            return;
+        }
+
+        throw new Error(
+            "Ukjent hendelse i strømmet respons."
+        );
+    }
+
+    while (true) {
+        const { value, done } = await reader.read();
+        bufferedText += decoder.decode(
+            value || new Uint8Array(),
+            { stream: !done }
+        );
+
+        let newlineIndex =
+            bufferedText.indexOf("\n");
+
+        while (newlineIndex !== -1) {
+            processLine(
+                bufferedText.slice(0, newlineIndex)
+            );
+            bufferedText =
+                bufferedText.slice(newlineIndex + 1);
+            newlineIndex =
+                bufferedText.indexOf("\n");
+        }
+
+        if (done) {
+            break;
+        }
+    }
+
+    if (bufferedText.trim()) {
+        processLine(bufferedText);
+    }
+
+    if (!result) {
+        throw new Error(
+            "Strømmen ble avsluttet før svaret var ferdig."
+        );
+    }
+
+    return result;
 }
 
 
@@ -1371,9 +1597,21 @@ form.addEventListener(
         input.disabled = true;
 
         try {
+            const assistantBody = addMessage(
+                "assistant",
+                ""
+            );
             const result =
                 await sendMessage(
-                    message
+                    message,
+                    (content) => {
+                        assistantBody.textContent +=
+                            content;
+                        assistantBody.scrollIntoView({
+                            behavior: "smooth",
+                            block: "end",
+                        });
+                    }
                 );
 
             conversationId =
@@ -1382,11 +1620,6 @@ form.addEventListener(
             updateConversationInfo();
 
             await loadConversations();
-
-            addMessage(
-                "assistant",
-                result.response
-            );
 
             showSources(
                 result.sources

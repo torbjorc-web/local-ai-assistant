@@ -134,6 +134,50 @@ textarea {
 }
 
 
+.section-nav {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+
+    padding: 8px 24px 16px;
+
+    background: var(--background);
+}
+
+
+.section-nav a {
+    padding: 8px 12px;
+
+    border: 1px solid var(--border);
+    border-radius: 999px;
+
+    background: var(--surface);
+    color: var(--text);
+
+    font-size: 0.85rem;
+    text-decoration: none;
+}
+
+
+.section-nav a:hover,
+.section-nav a:focus-visible {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+
+#conversations-panel,
+#memory-panel,
+#chat-panel,
+#documents-panel {
+    scroll-margin-top: 64px;
+}
+
+
 .main {
     flex: 1;
 
@@ -545,9 +589,61 @@ textarea {
 
 .document-actions {
     display: flex;
+    flex-wrap: wrap;
     justify-content: flex-end;
+    gap: 6px;
 
     margin-top: 10px;
+}
+
+
+.document-detail-button {
+    padding: 6px 8px;
+
+    background: var(--surface);
+    color: var(--text);
+
+    font-size: 0.7rem;
+}
+
+
+.document-details {
+    margin-top: 10px;
+    padding: 10px;
+
+    border-radius: 10px;
+    background: var(--surface);
+}
+
+
+.document-detail-meta {
+    margin-bottom: 10px;
+
+    color: var(--muted);
+    font-size: 0.75rem;
+    line-height: 1.5;
+}
+
+
+.document-chunk {
+    padding: 10px 0;
+    border-top: 1px solid var(--border);
+}
+
+
+.document-chunk h3 {
+    margin: 0 0 6px;
+    font-size: 0.8rem;
+}
+
+
+.document-chunk-content {
+    max-height: 220px;
+    overflow: auto;
+
+    font-size: 0.8rem;
+    line-height: 1.5;
+    white-space: pre-wrap;
 }
 
 

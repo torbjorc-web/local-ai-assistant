@@ -119,11 +119,20 @@ def show_documents(chatbot: Chatbot):
         file_path,
         chunk_count,
         updated_at,
+        page_count,
+        file_size,
+        used_ocr,
+        extraction_method,
+        _,
     ) in documents:
         print(
             f"\nID: {document_id}"
             f"\nFil: {file_name}"
             f"\nChunks: {chunk_count}"
+            f"\nSider: {page_count or 'ukjent'}"
+            f"\nStørrelse: {file_size} bytes"
+            f"\nOCR: {'ja' if used_ocr else 'nei'}"
+            f"\nUttrekk: {extraction_method}"
             f"\nOppdatert: {updated_at}"
             f"\nSti: {file_path}"
         )

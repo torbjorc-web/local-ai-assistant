@@ -1,3 +1,5 @@
+from collections.abc import Iterator
+
 import ollama
 
 from src.config import (
@@ -212,7 +214,7 @@ class Chatbot:
     # Chat
     # ---------------------------------------------------------
 
-    def chat(self, user_input: str) -> str:
+    def _begin_chat_turn(self, user_input: str):
         self._ensure_conversation()
 
         user_message = {
@@ -235,16 +237,12 @@ class Chatbot:
                 user_input
             )
         )
+        return messages_with_context
 
-        response = ollama.chat(
-            model=MODEL,
-            messages=messages_with_context,
-        )
-
-        assistant_message = (
-            response.message.content
-        )
-
+    def _save_assistant_message(
+        self,
+        assistant_message: str,
+    ):
         self.messages.append(
             {
                 "role": "assistant",
@@ -258,7 +256,50 @@ class Chatbot:
             assistant_message,
         )
 
+    def chat(self, user_input: str) -> str:
+        messages_with_context = (
+            self._begin_chat_turn(user_input)
+        )
+        response = ollama.chat(
+            model=MODEL,
+            messages=messages_with_context,
+        )
+
+        assistant_message = (
+            response.message.content
+        )
+
+        self._save_assistant_message(
+            assistant_message
+        )
+
         return assistant_message
+
+    def chat_stream(
+        self,
+        user_input: str,
+    ) -> Iterator[str]:
+        messages_with_context = (
+            self._begin_chat_turn(user_input)
+        )
+        response_stream = ollama.chat(
+            model=MODEL,
+            messages=messages_with_context,
+            stream=True,
+        )
+
+        response_parts = []
+
+        for response_chunk in response_stream:
+            content = response_chunk.message.content
+
+            if content:
+                response_parts.append(content)
+                yield content
+
+        self._save_assistant_message(
+            "".join(response_parts)
+        )
 
     # ---------------------------------------------------------
     # Conversation management
@@ -394,9 +435,22 @@ class Chatbot:
             self.document_rag.index_all_documents()
         )
 
+    def index_document(
+        self,
+        file_path,
+    ) -> int:
+        return self.document_rag.index_document(
+            file_path
+        )
+
     def list_documents(self):
         return (
             self.document_rag.list_documents()
+        )
+
+    def get_document(self, document_id: int):
+        return self.document_rag.get_document(
+            document_id
         )
 
     def search_documents(

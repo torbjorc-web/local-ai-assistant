@@ -1,26 +1,36 @@
+import json
 from pathlib import Path
 from typing import Annotated
 
 from fastapi import (
     Depends,
     FastAPI,
+    File,
     HTTPException,
     Query,
+    UploadFile,
     status,
 )
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
+from src.config import (
+    DOCUMENTS_PATH,
+    MAX_UPLOAD_SIZE,
+    SUPPORTED_DOCUMENT_EXTENSIONS,
+)
 from src.chatbot import Chatbot
 from src.schemas import (
     ChatRequest,
     ChatResponse,
     ConversationResponse,
     DeleteResponse,
+    DocumentDetailResponse,
     DocumentIndexResult,
     DocumentResponse,
     DocumentSearchResponse,
     DocumentSourceResponse,
+    DocumentUploadResponse,
     HealthResponse,
     MemoryCreateRequest,
     MemoryResponse,
@@ -143,6 +153,90 @@ def chat(
         response=response,
         conversation_id=chatbot.conversation_id,
         sources=sources,
+    )
+
+
+@app.post(
+    "/chat/stream",
+    tags=["Chat"],
+)
+def chat_stream(
+    request: ChatRequest,
+    chatbot: ChatbotDependency,
+):
+    message = request.message.strip()
+
+    if not message:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Message cannot be empty.",
+        )
+
+    if request.conversation_id is not None:
+        loaded = chatbot.load_conversation(
+            request.conversation_id
+        )
+
+        if not loaded:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Conversation not found.",
+            )
+
+    def event_stream():
+        try:
+            for content in chatbot.chat_stream(message):
+                yield (
+                    json.dumps(
+                        {
+                            "type": "chunk",
+                            "content": content,
+                        },
+                        ensure_ascii=False,
+                    )
+                    + "\n"
+                )
+        except Exception as error:
+            yield (
+                json.dumps(
+                    {
+                        "type": "error",
+                        "conversation_id": chatbot.conversation_id,
+                        "detail": (
+                            "The local AI service could "
+                            f"not complete the request: {error}"
+                        ),
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n"
+            )
+            return
+
+        sources = [
+            {
+                "file_name": source["file_name"],
+                "chunk_index": source["chunk_index"],
+                "page_number": source.get("page_number"),
+                "similarity": source["similarity"],
+            }
+            for source in chatbot.last_document_sources
+        ]
+        yield (
+            json.dumps(
+                {
+                    "type": "done",
+                    "conversation_id": chatbot.conversation_id,
+                    "sources": sources,
+                },
+                ensure_ascii=False,
+            )
+            + "\n"
+        )
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="application/x-ndjson",
     )
 
 
@@ -320,6 +414,11 @@ def list_documents(
             file_path=file_path,
             chunk_count=chunk_count,
             updated_at=updated_at,
+            page_count=page_count,
+            file_size=file_size,
+            used_ocr=bool(used_ocr),
+            extraction_method=extraction_method,
+            ocr_pages=json.loads(ocr_pages),
         )
         for (
             document_id,
@@ -327,6 +426,11 @@ def list_documents(
             file_path,
             chunk_count,
             updated_at,
+            page_count,
+            file_size,
+            used_ocr,
+            extraction_method,
+            ocr_pages,
         ) in rows
     ]
 
@@ -408,6 +512,26 @@ def search_documents(
     ]
 
 
+@app.get(
+    "/documents/{document_id}",
+    response_model=DocumentDetailResponse,
+    tags=["Documents"],
+)
+def get_document(
+    document_id: int,
+    chatbot: ChatbotDependency,
+):
+    document = chatbot.get_document(document_id)
+
+    if document is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found.",
+        )
+
+    return DocumentDetailResponse(**document)
+
+
 @app.delete(
     "/documents/{document_id}",
     response_model=DeleteResponse,
@@ -430,3 +554,173 @@ def delete_document(
     return DeleteResponse(
         deleted=True,
     )
+
+
+@app.post(
+    "/documents/upload",
+    response_model=DocumentUploadResponse,
+    status_code=status.HTTP_201_CREATED,
+    tags=["Documents"],
+)
+async def upload_document(
+    file: Annotated[
+        UploadFile,
+        File(...),
+    ],
+    chatbot: ChatbotDependency,
+):
+    original_name = (
+        file.filename
+        or ""
+    ).strip()
+
+    if not original_name:
+        raise HTTPException(
+            status_code=(
+                status.HTTP_422_UNPROCESSABLE_ENTITY
+            ),
+            detail="File name is missing.",
+        )
+
+    normalized_name = original_name.replace(
+        "\\",
+        "/",
+    )
+
+    safe_name = normalized_name.split("/")[-1]
+
+    if (
+        not safe_name
+        or safe_name in {".", ".."}
+        or "\x00" in safe_name
+    ):
+        raise HTTPException(
+            status_code=(
+                status.HTTP_422_UNPROCESSABLE_ENTITY
+            ),
+            detail="Invalid file name.",
+        )
+
+    extension = Path(
+        safe_name
+    ).suffix.lower()
+
+    if extension not in (
+        SUPPORTED_DOCUMENT_EXTENSIONS
+    ):
+        supported = ", ".join(
+            sorted(
+                SUPPORTED_DOCUMENT_EXTENSIONS
+            )
+        )
+
+        raise HTTPException(
+            status_code=(
+                status.HTTP_415_UNSUPPORTED_MEDIA_TYPE
+            ),
+            detail=(
+                "Unsupported document type. "
+                f"Supported types: {supported}"
+            ),
+        )
+
+    DOCUMENTS_PATH.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    destination = (
+        DOCUMENTS_PATH / safe_name
+    )
+
+    if destination.exists():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "A document with this file name "
+                "already exists."
+            ),
+        )
+
+    temporary_destination = (
+        DOCUMENTS_PATH
+        / f".{safe_name}.uploading"
+    )
+
+    total_size = 0
+
+    try:
+        with temporary_destination.open(
+            "wb"
+        ) as output_file:
+            while True:
+                chunk = await file.read(
+                    1024 * 1024
+                )
+
+                if not chunk:
+                    break
+
+                total_size += len(chunk)
+
+                if total_size > MAX_UPLOAD_SIZE:
+                    raise HTTPException(
+                        status_code=(
+                            status.HTTP_413_CONTENT_TOO_LARGE
+                        ),
+                        detail=(
+                            "The uploaded file is "
+                            "larger than the allowed limit."
+                        ),
+                    )
+
+                output_file.write(chunk)
+
+        if total_size == 0:
+            raise HTTPException(
+                status_code=(
+                    status.HTTP_422_UNPROCESSABLE_ENTITY
+                ),
+                detail="The uploaded file is empty.",
+            )
+
+        temporary_destination.replace(
+            destination
+        )
+
+        try:
+            chunk_count = (
+                chatbot.index_document(
+                    destination
+                )
+            )
+
+        except Exception as error:
+            destination.unlink(
+                missing_ok=True
+            )
+
+            raise HTTPException(
+                status_code=(
+                    status.HTTP_422_UNPROCESSABLE_ENTITY
+                ),
+                detail=(
+                    "The document was uploaded, "
+                    "but indexing failed: "
+                    f"{error}"
+                ),
+            ) from error
+
+        return DocumentUploadResponse(
+            file_name=safe_name,
+            file_size=total_size,
+            chunk_count=chunk_count,
+            status="indexed",
+        )
+
+    finally:
+        await file.close()
+
+        temporary_destination.unlink(
+            missing_ok=True
+        )

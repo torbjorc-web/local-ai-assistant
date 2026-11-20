@@ -1,6 +1,9 @@
+import json
+
 import pytest
 from fastapi.testclient import TestClient
 
+import src.api as api_module
 from src.api import app, get_chatbot
 
 
@@ -108,6 +111,11 @@ class FakeChatbot:
                 "data/documents/python_notes.md",
                 2,
                 "2026-11-19 10:00:00",
+                None,
+                300,
+                0,
+                "text",
+                "[]",
             ),
             (
                 2,
@@ -115,8 +123,39 @@ class FakeChatbot:
                 "data/documents/machine_learning.pdf",
                 5,
                 "2026-11-19 10:05:00",
+                12,
+                4096,
+                1,
+                "ocr",
+                "[1,2]",
             ),
         ]
+
+    def get_document(self, document_id: int):
+        if document_id != 1:
+            return None
+
+        return {
+            "id": 1,
+            "file_name": "python_notes.md",
+            "file_path": (
+                "data/documents/python_notes.md"
+            ),
+            "chunk_count": 1,
+            "updated_at": "2026-11-19 10:00:00",
+            "page_count": None,
+            "file_size": 300,
+            "used_ocr": False,
+            "extraction_method": "text",
+            "ocr_pages": [],
+            "chunks": [
+                {
+                    "chunk_index": 0,
+                    "page_number": None,
+                    "content": "Python notes.",
+                }
+            ],
+        }
 
     def index_documents(self):
         return [
@@ -161,6 +200,9 @@ class FakeChatbot:
         document_id: int,
     ):
         return document_id in {1, 2}
+
+    def index_document(self, file_path):
+        return 2
 
 
 @pytest.fixture
@@ -216,6 +258,105 @@ def test_chat(client, monkeypatch):
         "sources": [],
     }
     assert received_messages == ["Hello"]
+
+
+def test_chat_stream_emits_chunks_and_completion(
+    client,
+    monkeypatch,
+):
+    class FakeChatbot:
+        conversation_id = "streamed-conversation"
+        last_document_sources = [
+            {
+                "file_name": "notes.pdf",
+                "chunk_index": 2,
+                "page_number": 3,
+                "similarity": 0.9,
+            }
+        ]
+
+        def chat_stream(self, message):
+            assert message == "Stream this"
+            yield "Hello"
+            yield " world"
+
+    chatbot = FakeChatbot()
+    monkeypatch.setitem(
+        app.dependency_overrides,
+        get_chatbot,
+        lambda: chatbot,
+    )
+
+    response = client.post(
+        "/chat/stream",
+        json={"message": " Stream this "},
+    )
+
+    assert response.status_code == 200
+    events = [
+        json.loads(line)
+        for line in response.text.splitlines()
+    ]
+    assert events == [
+        {
+            "type": "chunk",
+            "content": "Hello",
+        },
+        {
+            "type": "chunk",
+            "content": " world",
+        },
+        {
+            "type": "done",
+            "conversation_id": "streamed-conversation",
+            "sources": [
+                {
+                    "file_name": "notes.pdf",
+                    "chunk_index": 2,
+                    "page_number": 3,
+                    "similarity": 0.9,
+                }
+            ],
+        },
+    ]
+
+
+def test_chat_stream_reports_generation_errors(
+    client,
+    monkeypatch,
+):
+    class FakeChatbot:
+        conversation_id = "streamed-conversation"
+        last_document_sources = []
+
+        def chat_stream(self, _message):
+            yield "Partial"
+            raise RuntimeError("model unavailable")
+
+        conversation_id = "streamed-conversation"
+        last_document_sources = []
+
+    monkeypatch.setitem(
+        app.dependency_overrides,
+        get_chatbot,
+        lambda: FakeChatbot(),
+    )
+
+    response = client.post(
+        "/chat/stream",
+        json={"message": "Hello"},
+    )
+
+    events = [
+        json.loads(line)
+        for line in response.text.splitlines()
+    ]
+    assert events[-1]["type"] == "error"
+    assert (
+        events[-1]["conversation_id"]
+        == "streamed-conversation"
+    )
+    assert "model unavailable" in events[-1]["detail"]
 
 
 def test_chat_existing_conversation(client, monkeypatch):
@@ -456,6 +597,11 @@ def test_list_documents(client):
         "updated_at": (
             "2026-11-19 10:00:00"
         ),
+        "page_count": None,
+        "file_size": 300,
+        "used_ocr": False,
+        "extraction_method": "text",
+        "ocr_pages": [],
     }
 
     assert data[1] == {
@@ -469,7 +615,32 @@ def test_list_documents(client):
         "updated_at": (
             "2026-11-19 10:05:00"
         ),
+        "page_count": 12,
+        "file_size": 4096,
+        "used_ocr": True,
+        "extraction_method": "ocr",
+        "ocr_pages": [1, 2],
     }
+
+def test_get_document_details(client):
+    response = client.get("/documents/1")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["page_count"] is None
+    assert data["chunks"] == [
+        {
+            "chunk_index": 0,
+            "page_number": None,
+            "content": "Python notes.",
+        }
+    ]
+
+
+def test_get_unknown_document_details(client):
+    response = client.get("/documents/999")
+
+    assert response.status_code == 404
 
 
 def test_index_documents(client):
@@ -551,3 +722,154 @@ def test_delete_unknown_document(client):
     assert response.json() == {
         "detail": "Document not found.",
     }
+
+
+def test_upload_document_sanitizes_windows_path(
+    client,
+    tmp_path,
+    monkeypatch,
+):
+    documents_path = tmp_path / "documents"
+    monkeypatch.setattr(
+        api_module,
+        "DOCUMENTS_PATH",
+        documents_path,
+    )
+
+    content = b"Python notes"
+    response = client.post(
+        "/documents/upload",
+        files={
+            "file": (
+                "C:\\private\\notes.txt",
+                content,
+                "text/plain",
+            )
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.json() == {
+        "file_name": "notes.txt",
+        "file_size": len(content),
+        "chunk_count": 2,
+        "status": "indexed",
+    }
+    assert (
+        documents_path / "notes.txt"
+    ).read_bytes() == content
+
+
+def test_upload_document(
+    client,
+    tmp_path,
+    monkeypatch,
+):
+    documents_path = (
+        tmp_path / "documents"
+    )
+
+    documents_path.mkdir()
+
+    monkeypatch.setattr(
+        api_module,
+        "DOCUMENTS_PATH",
+        documents_path,
+    )
+
+    content = (
+        b"# Python\n\n"
+        b"Python brukes til dataanalyse."
+    )
+
+    response = client.post(
+        "/documents/upload",
+        files={
+            "file": (
+                "uploaded_notes.md",
+                content,
+                "text/markdown",
+            )
+        },
+    )
+
+    assert response.status_code == 201
+
+    data = response.json()
+
+    assert data == {
+        "file_name": "uploaded_notes.md",
+        "file_size": len(content),
+        "chunk_count": 2,
+        "status": "indexed",
+    }
+
+    saved_file = (
+        documents_path
+        / "uploaded_notes.md"
+    )
+
+    assert saved_file.read_bytes() == content
+
+
+def test_upload_document_rejects_oversized_file(
+    client,
+    tmp_path,
+    monkeypatch,
+):
+    documents_path = tmp_path / "documents"
+    monkeypatch.setattr(
+        api_module,
+        "DOCUMENTS_PATH",
+        documents_path,
+    )
+    monkeypatch.setattr(
+        api_module,
+        "MAX_UPLOAD_SIZE",
+        3,
+    )
+
+    response = client.post(
+        "/documents/upload",
+        files={
+            "file": (
+                "large.txt",
+                b"four",
+                "text/plain",
+            )
+        },
+    )
+
+    assert response.status_code == 413
+    assert list(documents_path.iterdir()) == []
+
+
+def test_upload_unsupported_document(
+    client,
+    tmp_path,
+    monkeypatch,
+):
+    documents_path = (
+        tmp_path / "documents"
+    )
+
+    documents_path.mkdir()
+
+    monkeypatch.setattr(
+        api_module,
+        "DOCUMENTS_PATH",
+        documents_path,
+    )
+
+    response = client.post(
+        "/documents/upload",
+        files={
+            "file": (
+                "program.exe",
+                b"not allowed",
+                "application/octet-stream",
+            )
+        },
+    )
+
+    assert response.status_code == 415

@@ -13,7 +13,55 @@ class DocumentStore:
         )
 
         self._create_tables()
+        self._migrate_documents_table()
         self._migrate_document_chunks_table()
+
+    def _migrate_documents_table(self):
+        migrations = {
+            "page_count": "INTEGER",
+            "file_size": (
+                "INTEGER NOT NULL DEFAULT 0"
+            ),
+            "used_ocr": (
+                "INTEGER NOT NULL DEFAULT 0"
+            ),
+            "extraction_method": (
+                "TEXT NOT NULL DEFAULT 'legacy'"
+            ),
+            "ocr_pages": (
+                "TEXT NOT NULL DEFAULT '[]'"
+            ),
+        }
+
+        with self._connect() as connection:
+            columns = connection.execute(
+                "PRAGMA table_info(documents)"
+            ).fetchall()
+            column_names = {
+                column[1]
+                for column in columns
+            }
+
+            if migrations.keys() <= column_names:
+                return
+
+            connection.execute("BEGIN IMMEDIATE")
+            columns = connection.execute(
+                "PRAGMA table_info(documents)"
+            ).fetchall()
+            column_names = {
+                column[1]
+                for column in columns
+            }
+
+            for name, definition in migrations.items():
+                if name not in column_names:
+                    connection.execute(
+                        f"""
+                        ALTER TABLE documents
+                        ADD COLUMN {name} {definition}
+                        """
+                    )
 
     def _connect(self):
         connection = sqlite3.connect(DB_PATH)
@@ -32,6 +80,11 @@ class DocumentStore:
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     file_path TEXT NOT NULL UNIQUE,
                     file_name TEXT NOT NULL,
+                    page_count INTEGER,
+                    file_size INTEGER NOT NULL DEFAULT 0,
+                    used_ocr INTEGER NOT NULL DEFAULT 0,
+                    extraction_method TEXT NOT NULL DEFAULT 'legacy',
+                    ocr_pages TEXT NOT NULL DEFAULT '[]',
                     updated_at DATETIME
                         DEFAULT CURRENT_TIMESTAMP
                 )
@@ -76,6 +129,18 @@ class DocumentStore:
                 for column in columns
             }
 
+            if "page_number" in column_names:
+                return
+
+            connection.execute("BEGIN IMMEDIATE")
+            columns = connection.execute(
+                "PRAGMA table_info(document_chunks)"
+            ).fetchall()
+            column_names = {
+                column[1]
+                for column in columns
+            }
+
             if "page_number" not in column_names:
                 connection.execute(
                     """
@@ -90,9 +155,15 @@ class DocumentStore:
         chunks: list[dict],
         embeddings: list[list[float]],
         embedding_model: str,
+        metadata: dict | None = None,
     ) -> int:
         normalized_path = str(
             file_path.resolve()
+        )
+        metadata = metadata or {}
+        ocr_pages = metadata.get(
+            "ocr_pages",
+            [],
         )
 
         if len(chunks) != len(embeddings):
@@ -106,18 +177,39 @@ class DocumentStore:
                 INSERT INTO documents (
                     file_path,
                     file_name,
+                    page_count,
+                    file_size,
+                    used_ocr,
+                    extraction_method,
+                    ocr_pages,
                     updated_at
                 )
-                VALUES (?, ?, CURRENT_TIMESTAMP)
+                VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
 
                 ON CONFLICT(file_path)
                 DO UPDATE SET
                     file_name = excluded.file_name,
+                    page_count = excluded.page_count,
+                    file_size = excluded.file_size,
+                    used_ocr = excluded.used_ocr,
+                    extraction_method = excluded.extraction_method,
+                    ocr_pages = excluded.ocr_pages,
                     updated_at = CURRENT_TIMESTAMP
                 """,
                 (
                     normalized_path,
                     file_path.name,
+                    metadata.get("page_count"),
+                    metadata.get(
+                        "file_size",
+                        file_path.stat().st_size,
+                    ),
+                    bool(metadata.get("used_ocr", False)),
+                    metadata.get(
+                        "extraction_method",
+                        "text",
+                    ),
+                    json.dumps(ocr_pages),
                 ),
             )
 
@@ -181,7 +273,12 @@ class DocumentStore:
                     d.file_name,
                     d.file_path,
                     COUNT(c.id) AS chunk_count,
-                    d.updated_at
+                    d.updated_at,
+                    d.page_count,
+                    d.file_size,
+                    d.used_ocr,
+                    d.extraction_method,
+                    d.ocr_pages
 
                 FROM documents AS d
 
@@ -192,13 +289,75 @@ class DocumentStore:
                     d.id,
                     d.file_name,
                     d.file_path,
-                    d.updated_at
+                    d.updated_at,
+                    d.page_count,
+                    d.file_size,
+                    d.used_ocr,
+                    d.extraction_method,
+                    d.ocr_pages
 
                 ORDER BY d.updated_at DESC
                 """
             ).fetchall()
 
         return rows
+
+    def get_document(self, document_id: int):
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT
+                    id,
+                    file_name,
+                    file_path,
+                    page_count,
+                    file_size,
+                    used_ocr,
+                    extraction_method,
+                    ocr_pages,
+                    updated_at
+                FROM documents
+                WHERE id = ?
+                """,
+                (document_id,),
+            ).fetchone()
+
+            if row is None:
+                return None
+
+            chunks = connection.execute(
+                """
+                SELECT
+                    chunk_index,
+                    page_number,
+                    content
+                FROM document_chunks
+                WHERE document_id = ?
+                ORDER BY chunk_index
+                """,
+                (document_id,),
+            ).fetchall()
+
+        return {
+            "id": row[0],
+            "file_name": row[1],
+            "file_path": row[2],
+            "page_count": row[3],
+            "file_size": row[4],
+            "used_ocr": bool(row[5]),
+            "extraction_method": row[6],
+            "ocr_pages": json.loads(row[7]),
+            "updated_at": row[8],
+            "chunk_count": len(chunks),
+            "chunks": [
+                {
+                    "chunk_index": chunk[0],
+                    "page_number": chunk[1],
+                    "content": chunk[2],
+                }
+                for chunk in chunks
+            ],
+        }
 
     def load_chunks(
         self,

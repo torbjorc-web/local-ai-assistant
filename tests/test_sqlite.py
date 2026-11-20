@@ -1,8 +1,11 @@
+from concurrent.futures import ThreadPoolExecutor
 import sqlite3
 
 import pytest
 
+import src.document_store as document_store_module
 import src.memory as memory_module
+from src.document_store import DocumentStore
 from src.memory import Memory
 
 
@@ -39,6 +42,105 @@ def test_database_tables_are_created(
     assert "conversations" in table_names
     assert "messages" in table_names
     assert "memories" in table_names
+
+
+def test_document_store_migrates_existing_database(
+    tmp_path,
+    monkeypatch,
+):
+    database_path = tmp_path / "legacy.db"
+    monkeypatch.setattr(
+        document_store_module,
+        "DB_PATH",
+        database_path,
+    )
+
+    with sqlite3.connect(database_path) as connection:
+        connection.execute(
+            """
+            CREATE TABLE documents (
+                id INTEGER PRIMARY KEY,
+                file_path TEXT NOT NULL UNIQUE,
+                file_name TEXT NOT NULL,
+                updated_at DATETIME
+            )
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO documents (
+                id,
+                file_path,
+                file_name
+            )
+            VALUES (1, 'legacy.txt', 'legacy.txt')
+            """
+        )
+
+    DocumentStore()
+
+    with sqlite3.connect(database_path) as connection:
+        columns = {
+            row[1]
+            for row in connection.execute(
+                "PRAGMA table_info(documents)"
+            )
+        }
+        legacy_row = connection.execute(
+            """
+            SELECT file_name, used_ocr, extraction_method, ocr_pages
+            FROM documents
+            WHERE id = 1
+            """
+        ).fetchone()
+
+    assert {
+        "page_count",
+        "file_size",
+        "used_ocr",
+        "extraction_method",
+        "ocr_pages",
+    }.issubset(columns)
+    assert legacy_row == (
+        "legacy.txt",
+        0,
+        "legacy",
+        "[]",
+    )
+
+
+def test_document_store_migration_is_concurrency_safe(
+    tmp_path,
+    monkeypatch,
+):
+    database_path = tmp_path / "concurrent-legacy.db"
+    monkeypatch.setattr(
+        document_store_module,
+        "DB_PATH",
+        database_path,
+    )
+
+    with sqlite3.connect(database_path) as connection:
+        connection.execute(
+            """
+            CREATE TABLE documents (
+                id INTEGER PRIMARY KEY,
+                file_path TEXT NOT NULL UNIQUE,
+                file_name TEXT NOT NULL,
+                updated_at DATETIME
+            )
+            """
+        )
+
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        stores = list(
+            executor.map(
+                lambda _index: DocumentStore(),
+                range(4),
+            )
+        )
+
+    assert len(stores) == 4
 
 
 def test_create_conversation(

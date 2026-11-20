@@ -162,12 +162,109 @@ def test_index_text_document(rag, tmp_path):
         file_path,
         stored_chunk_count,
         updated_at,
+        page_count,
+        file_size,
+        used_ocr,
+        extraction_method,
+        ocr_pages,
     ) = documents[0]
 
     assert isinstance(document_id, int)
     assert file_name == "python_notes.txt"
     assert stored_chunk_count == 1
     assert updated_at is not None
+    assert page_count is None
+    assert file_size == document.stat().st_size
+    assert used_ocr == 0
+    assert extraction_method == "text"
+    assert ocr_pages == "[]"
+
+    details = rag.get_document(document_id)
+    assert details["chunk_count"] == 1
+    assert details["chunks"] == [
+        {
+            "chunk_index": 0,
+            "page_number": None,
+            "content": (
+                "Python brukes til dataanalyse, "
+                "automatisering og maskinlæring."
+            ),
+        }
+    ]
+
+
+def test_index_pdf_ocr_metadata(
+    rag,
+    tmp_path,
+    monkeypatch,
+):
+    class FakePage:
+        def __init__(self, text):
+            self.text = text
+
+        def get_text(self, *_args, **_kwargs):
+            return self.text
+
+        def get_pixmap(self, **_kwargs):
+            return FakePixmap()
+
+    class FakePixmap:
+        def tobytes(self, _image_format):
+            return b"fake-image"
+
+    class FakePdf:
+        def __init__(self):
+            self.pages = [
+                FakePage("Embedded text."),
+                FakePage(""),
+            ]
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def __len__(self):
+            return len(self.pages)
+
+        def __iter__(self):
+            return iter(self.pages)
+
+    document = tmp_path / "scanned.pdf"
+    document.write_bytes(b"%PDF-test")
+
+    monkeypatch.setattr(
+        rag_module.pymupdf,
+        "open",
+        lambda _path: FakePdf(),
+    )
+    monkeypatch.setattr(
+        rag_module.Image,
+        "open",
+        lambda _image: object(),
+    )
+    monkeypatch.setattr(
+        rag_module.pytesseract,
+        "image_to_string",
+        lambda _image, lang: (
+            "OCR extracted text."
+        ),
+    )
+
+    rag.index_document(document)
+
+    document_id = rag.list_documents()[0][0]
+    details = rag.get_document(document_id)
+
+    assert details["page_count"] == 2
+    assert details["used_ocr"] is True
+    assert details["extraction_method"] == "pdf_text+ocr"
+    assert details["ocr_pages"] == [2]
+    assert [
+        chunk["page_number"]
+        for chunk in details["chunks"]
+    ] == [1, 2]
 
 
 def test_search_returns_relevant_document(

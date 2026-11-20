@@ -1,6 +1,9 @@
+from io import BytesIO
 from pathlib import Path
 
 import pymupdf
+import pytesseract
+from PIL import Image
 
 from src.config import (
     DOCUMENT_CHUNK_OVERLAP,
@@ -9,7 +12,9 @@ from src.config import (
     DOCUMENT_TOP_K,
     DOCUMENTS_PATH,
     EMBEDDING_MODEL,
+    OCR_LANGUAGES,
     SUPPORTED_DOCUMENT_EXTENSIONS,
+    TESSERACT_COMMAND,
 )
 from src.document_store import DocumentStore
 from src.embeddings import EmbeddingService
@@ -31,23 +36,43 @@ class DocumentRAG:
         self,
         file_path: Path,
     ) -> list[dict]:
+        sections, _ = self._read_document_with_metadata(
+            file_path
+        )
+        return sections
+
+    def _read_document_with_metadata(
+        self,
+        file_path: Path,
+    ) -> tuple[list[dict], dict]:
         extension = file_path.suffix.lower()
+        file_size = file_path.stat().st_size
 
         if extension in {".txt", ".md"}:
             text = file_path.read_text(
                 encoding="utf-8",
             )
-            return [
+            sections = [
                 {
                     "page_number": None,
                     "content": text,
                 }
             ]
+            return sections, {
+                "page_count": None,
+                "file_size": file_size,
+                "used_ocr": False,
+                "extraction_method": "text",
+                "ocr_pages": [],
+            }
 
         if extension == ".pdf":
             pages = []
+            ocr_pages = []
 
             with pymupdf.open(file_path) as document:
+                page_count = len(document)
+
                 for page_index, page in enumerate(
                     document,
                     start=1,
@@ -58,22 +83,53 @@ class DocumentRAG:
                     ).strip()
 
                     if not text:
-                        continue
+                        pytesseract.pytesseract.tesseract_cmd = str(
+                            TESSERACT_COMMAND
+                        )
+                        pixmap = page.get_pixmap(
+                            dpi=200,
+                            alpha=False,
+                        )
+                        image = Image.open(
+                            BytesIO(
+                                pixmap.tobytes("png")
+                            )
+                        )
+                        text = pytesseract.image_to_string(
+                            image,
+                            lang=OCR_LANGUAGES,
+                        ).strip()
+                        ocr_pages.append(page_index)
 
-                    pages.append(
-                        {
-                            "page_number": page_index,
-                            "content": text,
-                        }
-                    )
+                    if text:
+                        pages.append(
+                            {
+                                "page_number": page_index,
+                                "content": text,
+                            }
+                        )
 
             if not pages:
                 raise ValueError(
-                    "PDF-en inneholder ingen uttrekkbar tekst. "
-                    "Dokumentet kan være skannet og kreve OCR."
+                    "PDF-en inneholder ingen uttrekkbar tekst "
+                    "etter OCR."
                 )
 
-            return pages
+            extraction_method = (
+                "pdf_text+ocr"
+                if ocr_pages and len(ocr_pages) < page_count
+                else "ocr"
+                if ocr_pages
+                else "pdf_text"
+            )
+
+            return pages, {
+                "page_count": page_count,
+                "file_size": file_size,
+                "used_ocr": bool(ocr_pages),
+                "extraction_method": extraction_method,
+                "ocr_pages": ocr_pages,
+            }
 
         raise ValueError(
             f"Dokumenttypen {extension} støttes ikke."
@@ -176,6 +232,15 @@ class DocumentRAG:
         self,
         file_path: Path,
     ) -> int:
+        chunk_count, _ = self._index_document(
+            file_path
+        )
+        return chunk_count
+
+    def _index_document(
+        self,
+        file_path: Path,
+    ) -> tuple[int, dict]:
         if not file_path.exists():
             raise FileNotFoundError(
                 f"Fant ikke filen: {file_path}"
@@ -197,8 +262,10 @@ class DocumentRAG:
                 f"Støttede typer: {supported}"
             )
 
-        document_sections = self._read_document(
-            file_path
+        document_sections, metadata = (
+            self._read_document_with_metadata(
+                file_path
+            )
         )
 
         chunks = self._create_chunks(
@@ -214,12 +281,14 @@ class DocumentRAG:
             chunks
         )
 
-        return self.store.save_document(
+        chunk_count = self.store.save_document(
             file_path=file_path,
             chunks=chunks,
             embeddings=embeddings,
             embedding_model=EMBEDDING_MODEL,
+            metadata=metadata,
         )
+        return chunk_count, metadata
 
     def index_all_documents(self):
         results = []
@@ -236,7 +305,7 @@ class DocumentRAG:
                 continue
 
             try:
-                chunk_count = self.index_document(
+                chunk_count, metadata = self._index_document(
                     file_path
                 )
 
@@ -245,6 +314,8 @@ class DocumentRAG:
                         "file_name": file_path.name,
                         "chunk_count": chunk_count,
                         "status": "indexed",
+                        "used_ocr": metadata["used_ocr"],
+                        "page_count": metadata["page_count"],
                         "error": None,
                     }
                 )
@@ -334,6 +405,9 @@ class DocumentRAG:
 
     def list_documents(self):
         return self.store.list_documents()
+
+    def get_document(self, document_id: int):
+        return self.store.get_document(document_id)
 
     def delete_document(
         self,

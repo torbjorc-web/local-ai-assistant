@@ -30,6 +30,10 @@ The project explores how the main building blocks behind modern AI assistants ca
 - Page-aware PDF retrieval
 - OCR fallback for scanned PDFs
 - Source-grounded RAG responses
+- Persistent OCR and document metadata
+- Document page and chunk detail views
+- Responsive web interface with streaming chat
+- Docker Compose deployment
 - Local-first architecture
 - No hosted LLM API required for the core application
 
@@ -72,13 +76,15 @@ The architecture is deliberately modular so that individual components can be un
 # Architecture
 
 ```text
-                         User
-                           |
-                           v
-                      Python CLI
-                           |
-                           v
-                        Chatbot
+                   User
+                 /      \
+                v        v
+          Python CLI   Web UI
+                \        |
+                 \       v
+                  \  FastAPI API
+                   \    /
+                    Chatbot
                            |
              +-------------+-------------+
              |                           |
@@ -179,6 +185,20 @@ embeddinggemma
 ```
 
 The architecture keeps the core LLM workflow local.
+
+---
+
+## Web interface
+
+Start the API and web interface from the repository root:
+
+```powershell
+uvicorn src.api:app --reload
+```
+
+Open [http://127.0.0.1:8000](http://127.0.0.1:8000). Chat responses stream as
+they are generated; conversations, memories, and document details are available
+from the navigation links.
 
 ---
 
@@ -503,7 +523,7 @@ PDF page
 Normal text extraction
    |
    v
-Enough text?
+Text found?
    |
    +------ Yes ------> Chunking
    |
@@ -528,9 +548,11 @@ EmbeddingGemma
 RAG index
 ```
 
-OCR is triggered when the normal PDF extraction returns too little usable text.
+OCR is run for PDF pages where normal text extraction returns no text. Its use,
+the affected pages, and the extraction method are persisted with the document.
 
-OCR languages are configurable.
+OCR languages and the Tesseract executable can be configured through the
+`OCR_LANGUAGES` and `TESSERACT_COMMAND` environment variables.
 
 Example:
 
@@ -706,6 +728,8 @@ local-ai-assistant/
 │
 ├── src/
 │   ├── __init__.py
+│   ├── api.py
+│   ├── schemas.py
 │   ├── main.py
 │   ├── chatbot.py
 │   ├── config.py
@@ -714,13 +738,21 @@ local-ai-assistant/
 │   ├── document_store.py
 │   └── rag.py
 │
+├── web/
+│   ├── app.js
+│   ├── index.html
+│   └── styles.css
+│
 ├── tests/
 │
 ├── models/
 │
+├── .dockerignore
 ├── .gitignore
+├── Dockerfile
 ├── LICENSE
 ├── README.md
+├── compose.yaml
 └── requirements.txt
 ```
 
@@ -766,7 +798,8 @@ creation timestamp
 
 ## `documents`
 
-Stores metadata about indexed documents.
+Stores the file path and name, page count, file size, extraction method, OCR
+usage and page numbers, and last indexing timestamp.
 
 ## `document_chunks`
 
@@ -779,6 +812,7 @@ page number
 content
 embedding
 embedding model
+creation timestamp
 ```
 
 ---
@@ -929,7 +963,7 @@ nor
 osd
 ```
 
-Configure languages in:
+The default languages are configured in:
 
 ```text
 src/config.py
@@ -967,6 +1001,23 @@ Skriv 'help' for å vise kommandoene.
 
 Du:
 ```
+
+---
+
+# Docker deployment
+
+Docker Compose starts the web app and a local Ollama service. Indexed documents
+and SQLite data persist under `./data`; Ollama models persist in a named volume.
+
+```powershell
+docker compose up --build -d
+docker compose exec ollama ollama pull gemma3:4b
+docker compose exec ollama ollama pull embeddinggemma
+```
+
+Open [http://127.0.0.1:8000](http://127.0.0.1:8000). The first model downloads
+can take time. This setup is intended for local use and does not add
+authentication or production hardening.
 
 ---
 
@@ -1027,7 +1078,6 @@ Thumbs.db
 
 # Current limitations
 
-- CLI-only interface
 - SQLite-based vector storage
 - Vector comparison runs in Python
 - No dedicated vector database
@@ -1035,8 +1085,6 @@ Thumbs.db
 - Complex PDF layouts may require improved layout-aware extraction
 - OCR has not yet been fully evaluated against a larger scanned-document test set
 - No authentication or multi-user support
-- No web UI
-- Limited automated testing
 - Embedding and retrieval settings are currently configured in Python
 
 ---
@@ -1068,6 +1116,8 @@ Thumbs.db
 - [x] Source-aware responses
 - [x] PDF page metadata
 - [ ] Complete OCR validation with scanned PDFs
+- [x] Persist OCR and document metadata
+- [x] Show document details, including pages and chunks
 - [ ] Improved PDF layout processing
 - [ ] Smarter chunking strategies
 - [ ] Automatic document change detection
@@ -1076,10 +1126,11 @@ Thumbs.db
 ## Application
 
 - [x] CLI
-- [ ] FastAPI backend
-- [ ] Web interface
-- [ ] Streaming responses
-- [ ] Docker
+- [x] FastAPI backend
+- [x] Web interface
+- [x] Improve web layout and navigation as functionality grows
+- [x] Stream AI responses
+- [x] Docker deployment
 - [ ] Environment-based configuration
 - [ ] Structured logging
 

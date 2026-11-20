@@ -1,10 +1,17 @@
+import os
 from pathlib import Path
 
 
 TESSERACT_COMMAND = Path(
-    r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+    os.environ.get(
+        "TESSERACT_COMMAND",
+        r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+    )
 )
-OCR_LANGUAGES = "nor+eng"
+OCR_LANGUAGES = os.environ.get(
+    "OCR_LANGUAGES",
+    "nor+eng",
+)
 
 MODEL = "gemma3:4b"
 
@@ -17,6 +24,7 @@ SEMANTIC_WEIGHT = 0.70
 KEYWORD_WEIGHT = 0.30
 
 DOCUMENTS_PATH = Path("data/documents")
+MAX_UPLOAD_SIZE = 25 * 1024 * 1024
 
 DOCUMENT_TOP_K = 4
 DOCUMENT_MIN_SIMILARITY = 0.35

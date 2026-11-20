@@ -70,6 +70,21 @@ class DocumentResponse(BaseModel):
     file_path: str
     chunk_count: int
     updated_at: str
+    page_count: int | None
+    file_size: int
+    used_ocr: bool
+    extraction_method: str
+    ocr_pages: list[int]
+
+
+class DocumentChunkResponse(BaseModel):
+    chunk_index: int
+    page_number: int | None
+    content: str
+
+
+class DocumentDetailResponse(DocumentResponse):
+    chunks: list[DocumentChunkResponse]
 
 
 class DocumentSearchResponse(BaseModel):
@@ -87,3 +102,10 @@ class DocumentIndexResult(BaseModel):
     status: str
     used_ocr: bool = False
     error: str | None = None
+
+
+class DocumentUploadResponse(BaseModel):
+    file_name: str
+    file_size: int
+    chunk_count: int
+    status: str
