@@ -53,6 +53,21 @@ const memoryStatus =
         "memory-status"
     );
 
+const documentList =
+    document.getElementById(
+        "document-list"
+    );
+
+const indexDocumentsButton =
+    document.getElementById(
+        "index-documents-button"
+    );
+
+const documentStatus =
+    document.getElementById(
+        "document-status"
+    );
+
 const conversationInfo =
     document.getElementById(
         "conversation-info"
@@ -72,6 +87,10 @@ const sourcesElement =
     document.getElementById(
         "sources"
     );
+
+
+const documentIndexStatus =
+    new Map();
 
 
 let conversationId = null;
@@ -303,6 +322,194 @@ async function loadMemories() {
 }
 
 
+async function loadDocuments() {
+    try {
+        const response = await fetch(
+            "/documents"
+        );
+
+        if (!response.ok) {
+            throw new Error(
+                "Kunne ikke hente dokumenter."
+            );
+        }
+
+        const documents =
+            await response.json();
+
+        renderDocuments(documents);
+
+    } catch (error) {
+        documentList.innerHTML = "";
+
+        const message =
+            document.createElement("div");
+
+        message.className =
+            "sidebar-placeholder";
+
+        message.textContent =
+            error.message;
+
+        documentList.appendChild(
+            message
+        );
+    }
+}
+
+
+async function indexDocuments() {
+    indexDocumentsButton.disabled =
+        true;
+
+    documentStatus.textContent =
+        "Indekserer dokumenter...";
+
+    documentStatus.className =
+        "panel-status";
+
+    try {
+        const response = await fetch(
+            "/documents/index",
+            {
+                method: "POST",
+            }
+        );
+
+        const data =
+            await response.json();
+
+        if (!response.ok) {
+            throw new Error(
+                data.detail
+                || "Indeksering feilet."
+            );
+        }
+
+        documentIndexStatus.clear();
+
+        let indexedCount = 0;
+        let errorCount = 0;
+
+        for (const result of data) {
+            documentIndexStatus.set(
+                result.file_name,
+                result
+            );
+
+            if (
+                result.status
+                === "indexed"
+            ) {
+                indexedCount += 1;
+            } else {
+                errorCount += 1;
+            }
+        }
+
+        if (errorCount === 0) {
+            documentStatus.textContent =
+                (
+                    `${indexedCount} dokumenter ` +
+                    "ble indeksert."
+                );
+
+            documentStatus.className =
+                "panel-status success";
+        } else {
+            documentStatus.textContent =
+                (
+                    `${indexedCount} indeksert, ` +
+                    `${errorCount} med feil.`
+                );
+
+            documentStatus.className =
+                "panel-status error";
+        }
+
+        await loadDocuments();
+
+    } catch (error) {
+        documentStatus.textContent =
+            error.message;
+
+        documentStatus.className =
+            "panel-status error";
+
+    } finally {
+        indexDocumentsButton.disabled =
+            false;
+    }
+}
+
+
+async function deleteDocument(
+    documentId,
+    fileName,
+    button
+) {
+    const confirmed = window.confirm(
+        (
+            `Vil du fjerne "${fileName}" `
+            + "fra RAG-indeksen?\n\n"
+            + "Originalfilen blir ikke slettet."
+        )
+    );
+
+    if (!confirmed) {
+        return;
+    }
+
+    button.disabled = true;
+
+    documentStatus.textContent =
+        "Sletter fra indeks...";
+
+    documentStatus.className =
+        "panel-status";
+
+    try {
+        const response = await fetch(
+            `/documents/${documentId}`,
+            {
+                method: "DELETE",
+            }
+        );
+
+        const data =
+            await response.json();
+
+        if (!response.ok) {
+            throw new Error(
+                data.detail
+                || "Kunne ikke slette dokumentet."
+            );
+        }
+
+        documentIndexStatus.delete(
+            fileName
+        );
+
+        documentStatus.textContent =
+            "Dokumentet er fjernet fra RAG-indeksen.";
+
+        documentStatus.className =
+            "panel-status success";
+
+        await loadDocuments();
+
+    } catch (error) {
+        button.disabled = false;
+
+        documentStatus.textContent =
+            error.message;
+
+        documentStatus.className =
+            "panel-status error";
+    }
+}
+
+
 async function createMemory(content) {
     const response = await fetch(
         "/memories",
@@ -469,6 +676,187 @@ function renderMemories(memories) {
         item.appendChild(actions);
 
         memoryList.appendChild(item);
+    }
+}
+
+
+function getDocumentType(fileName) {
+    const extension =
+        fileName
+            .split(".")
+            .pop()
+            .toLowerCase();
+
+    if (extension === "pdf") {
+        return {
+            label: "PDF",
+            className: "pdf",
+        };
+    }
+
+    if (extension === "md") {
+        return {
+            label: "MARKDOWN",
+            className: "markdown",
+        };
+    }
+
+    return {
+        label: "TXT",
+        className: "text",
+    };
+}
+
+
+function renderDocuments(documents) {
+    documentList.innerHTML = "";
+
+    if (
+        !documents
+        || documents.length === 0
+    ) {
+        const empty =
+            document.createElement("div");
+
+        empty.className =
+            "sidebar-placeholder";
+
+        empty.textContent =
+            "Ingen dokumenter er indeksert.";
+
+        documentList.appendChild(empty);
+
+        return;
+    }
+
+    for (const documentEntry of documents) {
+        const item =
+            document.createElement("div");
+
+        item.className =
+            "document-item";
+
+        const header =
+            document.createElement("div");
+
+        header.className =
+            "document-header";
+
+        const name =
+            document.createElement("div");
+
+        name.className =
+            "document-name";
+
+        name.textContent =
+            documentEntry.file_name;
+
+        header.appendChild(name);
+
+        const meta =
+            document.createElement("div");
+
+        meta.className =
+            "document-meta";
+
+        const chunkWord =
+            documentEntry.chunk_count === 1
+                ? "chunk"
+                : "chunks";
+
+        meta.textContent =
+            `${documentEntry.chunk_count} ${chunkWord}`;
+
+        const badges =
+            document.createElement("div");
+
+        badges.className =
+            "document-badges";
+
+        const fileType =
+            getDocumentType(
+                documentEntry.file_name
+            );
+
+        const typeBadge =
+            document.createElement("span");
+
+        typeBadge.className =
+            (
+                "document-badge "
+                + fileType.className
+            );
+
+        typeBadge.textContent =
+            fileType.label;
+
+        badges.appendChild(
+            typeBadge
+        );
+
+        const indexResult =
+            documentIndexStatus.get(
+                documentEntry.file_name
+            );
+
+        if (
+            indexResult
+            && indexResult.used_ocr
+        ) {
+            const ocrBadge =
+                document.createElement(
+                    "span"
+                );
+
+            ocrBadge.className =
+                "document-badge ocr";
+
+            ocrBadge.textContent =
+                "OCR";
+
+            badges.appendChild(
+                ocrBadge
+            );
+        }
+
+        const actions =
+            document.createElement("div");
+
+        actions.className =
+            "document-actions";
+
+        const deleteButton =
+            document.createElement("button");
+
+        deleteButton.type = "button";
+
+        deleteButton.className =
+            "delete-button";
+
+        deleteButton.textContent =
+            "Slett fra indeks";
+
+        deleteButton.addEventListener(
+            "click",
+            () => {
+                deleteDocument(
+                    documentEntry.id,
+                    documentEntry.file_name,
+                    deleteButton
+                );
+            }
+        );
+
+        actions.appendChild(
+            deleteButton
+        );
+
+        item.appendChild(header);
+        item.appendChild(meta);
+        item.appendChild(badges);
+        item.appendChild(actions);
+
+        documentList.appendChild(item);
     }
 }
 
@@ -833,8 +1221,14 @@ sidebarNewChatButton.addEventListener(
     startNewConversation
 );
 
+indexDocumentsButton.addEventListener(
+    "click",
+    indexDocuments
+);
+
 
 updateConversationInfo();
 checkHealth();
 loadConversations();
 loadMemories();
+loadDocuments();
