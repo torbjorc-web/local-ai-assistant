@@ -16,26 +16,27 @@ The project explores how the main building blocks behind modern AI assistants ca
 
 ## Highlights
 
-- Local LLM through Ollama
-- Gemma 3 4B for chat
-- EmbeddingGemma for vector embeddings
-- Persistent conversations in SQLite
-- Persistent long-term memory
-- Semantic memory search
+- CLI and browser-based interfaces
+- FastAPI backend
+- Streaming AI responses
+- Persistent conversations and long-term memory
 - Hybrid semantic + keyword retrieval
-- Conversation loading and resuming
-- Local document indexing
-- Markdown and text document support
-- PDF document support
-- Page-aware PDF retrieval
-- OCR fallback for scanned PDFs
-- Source-grounded RAG responses
-- Persistent OCR and document metadata
-- Document page and chunk detail views
-- Responsive web interface with streaming chat
-- Docker Compose deployment
-- Local-first architecture
-- No hosted LLM API required for the core application
+- Local document RAG
+- TXT, Markdown, and PDF support
+- OCR support for scanned PDFs
+- Drag-and-drop document upload
+- Upload progress and automatic indexing
+- Source-aware responses
+- Docker support
+- Automated pytest suite and GitHub Actions CI
+
+## Current Release
+
+**v0.1.0**
+
+The first public release includes the CLI, FastAPI backend, web interface,
+persistent memory, document RAG, PDF/OCR support, automated testing,
+GitHub Actions CI, and Docker configuration.
 
 ---
 
@@ -190,15 +191,20 @@ The architecture keeps the core LLM workflow local.
 
 ## Web interface
 
-Start the API and web interface from the repository root:
+The project includes a local web interface built on top of the FastAPI backend.
 
-```powershell
-uvicorn src.api:app --reload
-```
+![Local AI Assistant web interface](docs/images/web-interface.png)
 
-Open [http://127.0.0.1:8000](http://127.0.0.1:8000). Chat responses stream as
-they are generated; conversations, memories, and document details are available
-from the navigation links.
+The interface provides:
+
+- AI chat with streaming responses
+- persistent conversation history
+- long-term memory management
+- document RAG management
+- TXT, Markdown, and PDF support
+- drag-and-drop document upload
+- upload progress
+- document indexing and source-aware responses
 
 ---
 
@@ -1006,17 +1012,19 @@ Du:
 
 # Docker deployment
 
-Docker Compose starts the web app and a local Ollama service. Indexed documents
-and SQLite data persist under `./data`; Ollama models persist in a named volume.
+Docker Compose runs the web app in a container and connects to Ollama running on
+the host. Install and start Ollama, then download the required models:
 
 ```powershell
+ollama pull gemma3:4b
+ollama pull embeddinggemma
 docker compose up --build -d
-docker compose exec ollama ollama pull gemma3:4b
-docker compose exec ollama ollama pull embeddinggemma
 ```
 
-Open [http://127.0.0.1:8000](http://127.0.0.1:8000). The first model downloads
-can take time. This setup is intended for local use and does not add
+The Compose setup uses `host.docker.internal:11434` to reach Ollama and publishes
+the web app at [http://127.0.0.1:8000](http://127.0.0.1:8000). Indexed documents
+and SQLite data persist under `./data`. Set `OLLAMA_HOST` in the environment to
+override the Ollama URL. This setup is intended for local use and does not add
 authentication or production hardening.
 
 ---
