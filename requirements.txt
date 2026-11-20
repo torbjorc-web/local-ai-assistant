@@ -7,3 +7,6 @@ PyMuPDF>=1.24
 # OCR
 pytesseract
 Pillow
+
+# Testing
+pytest
