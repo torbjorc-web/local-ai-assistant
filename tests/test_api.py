@@ -100,6 +100,68 @@ class FakeChatbot:
     ):
         return memory_id in {1, 2}
 
+    def list_documents(self):
+        return [
+            (
+                1,
+                "python_notes.md",
+                "data/documents/python_notes.md",
+                2,
+                "2026-11-19 10:00:00",
+            ),
+            (
+                2,
+                "machine_learning.pdf",
+                "data/documents/machine_learning.pdf",
+                5,
+                "2026-11-19 10:05:00",
+            ),
+        ]
+
+    def index_documents(self):
+        return [
+            {
+                "file_name": "python_notes.md",
+                "chunk_count": 2,
+                "status": "indexed",
+                "used_ocr": False,
+                "error": None,
+            },
+            {
+                "file_name": "machine_learning.pdf",
+                "chunk_count": 5,
+                "status": "indexed",
+                "used_ocr": True,
+                "error": None,
+            },
+        ]
+
+    def search_documents(
+        self,
+        query: str,
+    ):
+        return [
+            {
+                "file_name": "python_notes.md",
+                "file_path": (
+                    "data/documents/python_notes.md"
+                ),
+                "chunk_index": 0,
+                "page_number": None,
+                "content": (
+                    "Python brukes til dataanalyse "
+                    "og automatisering."
+                ),
+                "similarity": 0.81,
+            }
+        ]
+
+    def delete_document(
+        self,
+        document_id: int,
+    ):
+        return document_id in {1, 2}
+
 
 @pytest.fixture
 def client(monkeypatch):
@@ -370,4 +432,122 @@ def test_delete_unknown_memory(client):
 
     assert response.json() == {
         "detail": "Memory not found.",
+    }
+
+
+def test_list_documents(client):
+    response = client.get(
+        "/documents"
+    )
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert len(data) == 2
+
+    assert data[0] == {
+        "id": 1,
+        "file_name": "python_notes.md",
+        "file_path": (
+            "data/documents/python_notes.md"
+        ),
+        "chunk_count": 2,
+        "updated_at": (
+            "2026-11-19 10:00:00"
+        ),
+    }
+
+    assert data[1] == {
+        "id": 2,
+        "file_name": "machine_learning.pdf",
+        "file_path": (
+            "data/documents/"
+            "machine_learning.pdf"
+        ),
+        "chunk_count": 5,
+        "updated_at": (
+            "2026-11-19 10:05:00"
+        ),
+    }
+
+
+def test_index_documents(client):
+    response = client.post(
+        "/documents/index"
+    )
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert len(data) == 2
+
+    assert data[0] == {
+        "file_name": "python_notes.md",
+        "chunk_count": 2,
+        "status": "indexed",
+        "used_ocr": False,
+        "error": None,
+    }
+
+    assert data[1] == {
+        "file_name": "machine_learning.pdf",
+        "chunk_count": 5,
+        "status": "indexed",
+        "used_ocr": True,
+        "error": None,
+    }
+
+
+def test_search_documents(client):
+    response = client.get(
+        "/documents/search",
+        params={
+            "query": "Python",
+        },
+    )
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert len(data) == 1
+
+    assert data[0] == {
+        "file_name": "python_notes.md",
+        "file_path": (
+            "data/documents/python_notes.md"
+        ),
+        "chunk_index": 0,
+        "page_number": None,
+        "content": (
+            "Python brukes til dataanalyse "
+            "og automatisering."
+        ),
+        "similarity": 0.81,
+    }
+
+
+def test_delete_document(client):
+    response = client.delete(
+        "/documents/1"
+    )
+
+    assert response.status_code == 200
+
+    assert response.json() == {
+        "deleted": True,
+    }
+
+
+def test_delete_unknown_document(client):
+    response = client.delete(
+        "/documents/999"
+    )
+
+    assert response.status_code == 404
+
+    assert response.json() == {
+        "detail": "Document not found.",
     }
