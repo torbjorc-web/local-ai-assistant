@@ -68,6 +68,38 @@ class FakeChatbot:
     def cleanup_empty_conversations(self):
         return 1
 
+    def list_memories(self):
+        return [
+            (
+                1,
+                "general",
+                "Jeg liker Python.",
+                "2026-11-19 10:00:00",
+            ),
+            (
+                2,
+                "general",
+                "Favorittspillet mitt er Zelda.",
+                "2026-11-19 10:05:00",
+            ),
+        ]
+
+    def remember(
+        self,
+        content: str,
+        category: str = "general",
+    ):
+        if content == "Duplikatminne":
+            return False
+
+        return True
+
+    def forget(
+        self,
+        memory_id: int,
+    ):
+        return memory_id in {1, 2}
+
 
 @pytest.fixture
 def client(monkeypatch):
@@ -252,4 +284,90 @@ def test_cleanup_conversations(client):
 
     assert response.json() == {
         "deleted_count": 1,
+    }
+
+
+def test_list_memories(client):
+    response = client.get(
+        "/memories"
+    )
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert len(data) == 2
+
+    assert data[0] == {
+        "id": 1,
+        "category": "general",
+        "content": "Jeg liker Python.",
+        "created_at": "2026-11-19 10:00:00",
+    }
+
+    assert data[1] == {
+        "id": 2,
+        "category": "general",
+        "content": (
+            "Favorittspillet mitt er Zelda."
+        ),
+        "created_at": "2026-11-19 10:05:00",
+    }
+
+
+def test_create_memory(client):
+    response = client.post(
+        "/memories",
+        json={
+            "content": (
+                "Jeg liker Power BI."
+            ),
+            "category": "general",
+        },
+    )
+
+    assert response.status_code == 201
+
+    assert response.json() == {
+        "saved": True,
+    }
+
+
+def test_create_duplicate_memory(client):
+    response = client.post(
+        "/memories",
+        json={
+            "content": "Duplikatminne",
+            "category": "general",
+        },
+    )
+
+    assert response.status_code == 409
+
+    assert response.json() == {
+        "detail": "This memory already exists.",
+    }
+
+
+def test_delete_memory(client):
+    response = client.delete(
+        "/memories/1"
+    )
+
+    assert response.status_code == 200
+
+    assert response.json() == {
+        "deleted": True,
+    }
+
+
+def test_delete_unknown_memory(client):
+    response = client.delete(
+        "/memories/999"
+    )
+
+    assert response.status_code == 404
+
+    assert response.json() == {
+        "detail": "Memory not found.",
     }

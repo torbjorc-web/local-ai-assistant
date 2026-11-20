@@ -37,30 +37,103 @@
         </header>
 
         <main class="main">
-            <section
-                id="messages"
-                class="messages"
-                aria-live="polite"
-            >
-                <div class="message assistant">
-                    <div class="message-label">
-                        AI
-                    </div>
+            <aside class="sidebar">
+                <div class="sidebar-header">
+                    <h2>Samtaler</h2>
 
-                    <div class="message-content">
-                        Hei! Jeg er klar. Hva vil du
-                        snakke om?
+                    <button
+                        id="sidebar-new-chat-button"
+                        type="button"
+                        class="primary-button full-width"
+                    >
+                        + Ny samtale
+                    </button>
+                </div>
+
+                <div
+                    id="conversation-list"
+                    class="conversation-list"
+                    aria-live="polite"
+                >
+                    <div class="sidebar-placeholder">
+                        Laster samtaler...
                     </div>
                 </div>
-            </section>
+            </aside>
 
-            <section
-                id="sources-panel"
-                class="sources-panel hidden"
-            >
-                <h2>Dokumentkilder</h2>
+            <aside class="memory-sidebar">
+                <div class="sidebar-header">
+                    <h2>Langtidsminne</h2>
 
-                <div id="sources"></div>
+                    <form id="memory-form">
+                        <label
+                            for="memory-input"
+                            class="sr-only"
+                        >
+                            Nytt minne
+                        </label>
+
+                        <textarea
+                            id="memory-input"
+                            rows="2"
+                            maxlength="5000"
+                            placeholder="Legg til et minne..."
+                            required
+                        ></textarea>
+
+                        <button
+                            id="add-memory-button"
+                            type="submit"
+                            class="primary-button full-width"
+                        >
+                            + Legg til minne
+                        </button>
+                    </form>
+                </div>
+
+                <div
+                    id="memory-status"
+                    class="panel-status"
+                    aria-live="polite"
+                ></div>
+
+                <div
+                    id="memory-list"
+                    class="memory-list"
+                    aria-live="polite"
+                >
+                    <div class="sidebar-placeholder">
+                        Laster minner...
+                    </div>
+                </div>
+            </aside>
+
+            <section class="chat-area">
+                <section
+                    id="messages"
+                    class="messages"
+                    aria-live="polite"
+                >
+                    <div class="message assistant">
+                        <div class="message-label">
+                            AI
+                        </div>
+
+                        <div class="message-content">
+                            Hei! Jeg er klar. Hva vil du
+                            snakke om?
+                        </div>
+                    </div>
+                </section>
+
+                <section
+                    id="sources-panel"
+                    class="sources-panel hidden"
+                >
+                    <h2>Dokumentkilder</h2>
+
+                    <div id="sources"></div>
+                </section>
             </section>
         </main>
 
